@@ -35,17 +35,25 @@ EVENT_DURATION_MINUTES = 60
 
 # =============================================================
 
+# --- Где хранить данные ---
+# Хостинг через переменную DATA_DIR указывает "вечную" папку, которая
+# переживает обновления кода. Дома переменной нет — храним рядом с кодом.
+DATA_DIR = os.environ.get("DATA_DIR", ".")
+os.makedirs(DATA_DIR, exist_ok=True)
+KEY_PATH = os.path.join(DATA_DIR, "secret.key")
+DB_PATH = os.path.join(DATA_DIR, "users.db")
+
 # --- Шифрование: при первом запуске создаём секретный ключ ---
-if not os.path.exists("secret.key"):
-    with open("secret.key", "wb") as f:
+if not os.path.exists(KEY_PATH):
+    with open(KEY_PATH, "wb") as f:
         f.write(Fernet.generate_key())
     print("Создал новый файл secret.key — храни его и никому не отдавай!")
 
-with open("secret.key", "rb") as f:
+with open(KEY_PATH, "rb") as f:
     fernet = Fernet(f.read())
 
 # --- База данных: файл users.db создастся сам ---
-db = sqlite3.connect("users.db", check_same_thread=False)
+db = sqlite3.connect(DB_PATH, check_same_thread=False)
 db.execute(
     """CREATE TABLE IF NOT EXISTS users (
         tg_id INTEGER PRIMARY KEY,   -- id пользователя в Telegram
