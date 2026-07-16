@@ -188,6 +188,25 @@ def parse_when(text, now):
     return day.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
+def parse_duration(text):
+    """Ищет в тексте длительность: 'на 2 часа', '30 мин', '1.5 часа',
+    'полчаса', 'полтора часа'. Возвращает минуты или None."""
+    text = text.lower().replace(",", ".")
+    if "полтора" in text:
+        return 90
+    if "полчаса" in text:
+        return 30
+    m = re.search(r"(\d+(?:\.\d+)?)\s*час", text)  # '2 часа', '1.5 часа'
+    if m is None:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*ч\b", text)  # '2ч', '2 ч'
+    if m:
+        return int(float(m.group(1)) * 60)
+    m = re.search(r"(\d+)\s*мин", text)  # '30 мин', '45 минут'
+    if m:
+        return int(m.group(1))
+    return None
+
+
 def get_user_calendar(user):
     client = caldav.DAVClient(
         url="https://caldav.yandex.ru",
@@ -382,6 +401,8 @@ async def got_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Записал 📝 На когда поставить?\n"
         "Например: «завтра 18:00», «в пятницу 09:30», «20.07 18:30»\n"
+        "Можно указать длительность: «завтра 18:00 на 2 часа» "
+        "или «завтра 18:00-19:30» (без неё поставлю 1 час)\n"
         "Отменить: /cancel"
     )
     return WAITING_DATE
@@ -389,14 +410,31 @@ async def got_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def got_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = load_user(update.effective_user.id)
+    text = update.message.text
 
     # Разбираем дату, считая "сейчас" по часам ПОЛЬЗОВАТЕЛЯ
-    event_local = parse_when(update.message.text, now=user_now(user))
+    event_local = parse_when(text, now=user_now(user))
     if event_local is None:
         await update.message.reply_text(
             "Не понял 😅 Напиши, например: «завтра 18:00» или «20.07 18:30»"
         )
         return WAITING_DATE
+
+    # Определяем длительность события.
+    duration = EVENT_DURATION_MINUTES  # по умолчанию
+    # Вариант 1: диапазон '18:00-19:30'
+    rng = re.search(r"(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})", text)
+    if rng:
+        start_m = int(rng.group(1)) * 60 + int(rng.group(2))
+        end_m = int(rng.group(3)) * 60 + int(rng.group(4))
+        if end_m <= start_m:  # конец 'за полночь'
+            end_m += 1440
+        duration = end_m - start_m
+    else:
+        # Вариант 2: словами — 'на 2 часа', '30 мин', 'полтора часа'
+        d = parse_duration(text)
+        if d:
+            duration = d
 
     # Переводим местное время пользователя в мировое (UTC):
     # вычитаем его сдвиг и помечаем результат как UTC.
@@ -409,7 +447,7 @@ async def got_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cal = get_user_calendar(user)
         cal.save_event(
             dtstart=event_utc,
-            dtend=event_utc + timedelta(minutes=EVENT_DURATION_MINUTES),
+            dtend=event_utc + timedelta(minutes=duration),
             summary=note,
         )
     except Exception:
@@ -419,10 +457,13 @@ async def got_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
+    end_local = event_local + timedelta(minutes=duration)
     await update.message.reply_text(
         f"✅ Добавил в «{user['cal_name']}»:\n"
         f"«{note}»\n"
-        f"🗓 {event_local.strftime('%d.%m.%Y в %H:%M')} (твоё время)"
+        f"🗓 {event_local.strftime('%d.%m.%Y')}, "
+        f"{event_local.strftime('%H:%M')}–{end_local.strftime('%H:%M')} "
+        f"(твоё время)"
     )
     return ConversationHandler.END
 
