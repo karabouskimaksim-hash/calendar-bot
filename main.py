@@ -28,7 +28,7 @@ from telegram.ext import (
 TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_СЮДА_ТОКЕН_ДЛЯ_ЗАПУСКА_ДОМА")
 
 # Ссылка для донатов (впиши свою, когда появится)
-DONATE_URL = "https://boosty.to/ВПИШИ_СВОЮ_СТРАНИЦУ"
+DONATE_URL = "https://boosty.to/karabovsky"
 
 EVENT_DURATION_MINUTES = 60
 
